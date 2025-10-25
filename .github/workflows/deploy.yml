@@ -35,18 +35,7 @@ jobs:
 
       - name: Create Dockerrun.aws.json
         run: |
-          cat > Dockerrun.aws.json <<'EOF'
-          {
-            "AWSEBDockerrunVersion": 1,
-            "Image": {
-              "Name": "${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest",
-              "Update": "true"
-            },
-            "Ports": [
-              { "ContainerPort": 80 }
-            ]
-          }
-          EOF
+          echo '{"AWSEBDockerrunVersion":1,"Image":{"Name":"'"${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest"'","Update":"true"},"Ports":[{"ContainerPort":80}]}' > Dockerrun.aws.json
 
       - name: Zip Dockerrun file
         run: zip -r latcicd.zip Dockerrun.aws.json
