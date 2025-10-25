@@ -17,9 +17,10 @@ WORKDIR /var/www/html
 
 COPY . .
 
-RUN composer install --no-dev --optimize-autoloader --no-interaction
-
-RUN chown -R www-data:www-data storage bootstrap/cache
+RUN composer install --no-dev --optimize-autoloader --no-interaction \
+&& php artisan storage:link \
+    && chown -R www-data:www-data storage bootstrap/cache \
+    && chmod -R 775 storage bootstrap/cache 
 
 EXPOSE 80
 CMD ["apache2-foreground"]
