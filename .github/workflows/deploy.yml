@@ -1,4 +1,4 @@
-name: Belajar CI/CD Laravel Docker ke Elastic Beanstalk
+name: CI/CD Laravel Docker → Elastic Beanstalk
 
 on:
   push:
@@ -25,7 +25,7 @@ jobs:
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image
+      - name: Build and push Docker image to ECR (optional backup)
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
@@ -33,33 +33,20 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Create Dockerrun.aws.json (1 line, safe)
-        run: |
-          echo '{"AWSEBDockerrunVersion":1,"Image":{"Name":"'"${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest"'","Update":"true"},"Ports":[{"ContainerPort":80}]}' > Dockerrun.aws.json
+      - name: Zip Laravel source + Dockerfile
+        run: zip -r app.zip . -x "*.git*"
 
-      - name: Verify Dockerrun
-        run: cat Dockerrun.aws.json
+      - name: Verify ZIP contents
+        run: unzip -l app.zip | head -n 10
 
-      - name: Zip Dockerrun file
-        run: zip -r latcicd.zip Dockerrun.aws.json
-
-      - name: Check ZIP contents
-        run: unzip -l latcicd.zip | head -n 10
-
-      - name: Upload to S3
-        run: |
-          aws s3 cp latcicd.zip s3://${{ secrets.AWS_S3_BUCKET_NAME }}/latcicd.zip
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
+      - name: Upload ZIP to S3
+        run: aws s3 cp app.zip s3://${{ secrets.AWS_S3_BUCKET_NAME }}/app.zip
 
       - name: Upload build artifact
         uses: actions/upload-artifact@v4
         with:
-          name: latcicd
-          path: latcicd.zip
+          name: laravel-app
+          path: app.zip
 
   deploy:
     needs: build
@@ -69,7 +56,7 @@ jobs:
       - name: Download build artifact
         uses: actions/download-artifact@v4
         with:
-          name: latcicd
+          name: laravel-app
 
       - name: Deploy to Elastic Beanstalk
         env:
@@ -87,7 +74,7 @@ jobs:
           aws elasticbeanstalk create-application-version \
             --application-name "$EB_APP_NAME" \
             --version-label "$VERSION_LABEL" \
-            --source-bundle S3Bucket="$S3_BUCKET_NAME",S3Key="latcicd.zip"
+            --source-bundle S3Bucket="$S3_BUCKET_NAME",S3Key="app.zip"
 
           aws elasticbeanstalk update-environment \
             --environment-name "$EB_ENV_NAME" \
