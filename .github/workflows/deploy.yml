@@ -1,4 +1,4 @@
-name: Belajar CI/CD Laravel Docker ke Elastic Beanstalk
+name: Deploy Laravel with Docker to Elastic Beanstalk (ECR)
 
 on:
   push:
@@ -6,7 +6,7 @@ on:
       - main
 
 jobs:
-  build:
+  deploy:
     runs-on: ubuntu-latest
 
     steps:
@@ -16,16 +16,14 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-session-token: ${{ secrets.AWS_SESSION_TOKEN }}
+          role-to-assume: arn:aws:iam::${{ secrets.AWS_ACCOUNT_ID }}:role/aws-elasticbeanstalk-lab-role
           aws-region: ${{ secrets.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and push Docker image
+      - name: Build, Tag, and Push Docker image to ECR
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
@@ -33,67 +31,31 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Create Dockerrun.aws.json
+      - name: Create Dockerrun.aws.json file
         run: |
-          cat <<EOF > Dockerrun.aws.json
-          {
+          echo '{
             "AWSEBDockerrunVersion": 1,
             "Image": {
-              "Name": "${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest",
+              "Name": "'${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest",
               "Update": "true"
             },
             "Ports": [
               { "ContainerPort": 80 }
             ]
-          }
-          EOF
+          }' > Dockerrun.aws.json
 
       - name: Zip Dockerrun file
-        run: zip -r latcicd.zip Dockerrun.aws.json
+        run: zip deploy.zip Dockerrun.aws.json
 
-      - name: Upload to S3
+      - name: Upload new version to Elastic Beanstalk
         run: |
-          aws s3 cp latcicd.zip s3://${{ secrets.AWS_S3_BUCKET_NAME }}/latcicd.zip
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: latcicd
-          path: latcicd.zip
-
-  deploy:
-    needs: build
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Download build artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: latcicd
-
-      - name: Deploy to Elastic Beanstalk
-        env:
-          AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          AWS_SESSION_TOKEN: ${{ secrets.AWS_SESSION_TOKEN }}
-          AWS_REGION: ${{ secrets.AWS_REGION }}
-          EB_APP_NAME: ${{ secrets.EB_APP_NAME }}
-          EB_ENV_NAME: ${{ secrets.EB_ENV_NAME }}
-          S3_BUCKET_NAME: ${{ secrets.AWS_S3_BUCKET_NAME }}
-        run: |
-          VERSION_LABEL="build-${{ github.run_number }}-$(date +%s)"
-          echo "📦 Deploying version: $VERSION_LABEL"
+          aws s3 cp deploy.zip s3://elasticbeanstalk-${{ secrets.AWS_REGION }}-${{ secrets.AWS_ACCOUNT_ID }}/app-deploy-${{ github.run_number }}.zip
 
           aws elasticbeanstalk create-application-version \
-            --application-name "$EB_APP_NAME" \
-            --version-label "$VERSION_LABEL" \
-            --source-bundle S3Bucket="$S3_BUCKET_NAME",S3Key="latcicd.zip"
+            --application-name "${{ secrets.EB_APP_NAME }}" \
+            --version-label "build-${{ github.run_number }}" \
+            --source-bundle S3Bucket="elasticbeanstalk-${{ secrets.AWS_REGION }}-${{ secrets.AWS_ACCOUNT_ID }}",S3Key="app-deploy-${{ github.run_number }}.zip"
 
           aws elasticbeanstalk update-environment \
-            --environment-name "$EB_ENV_NAME" \
-            --version-label "$VERSION_LABEL"
+            --environment-name "${{ secrets.EB_ENV_NAME }}" \
+            --version-label "build-${{ github.run_number }}"
