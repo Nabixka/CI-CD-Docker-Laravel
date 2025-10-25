@@ -35,11 +35,11 @@ jobs:
 
       - name: Create Dockerrun.aws.json
         run: |
-          cat <<EOF > Dockerrun.aws.json
+          cat > Dockerrun.aws.json <<'EOF'
           {
             "AWSEBDockerrunVersion": 1,
             "Image": {
-              "Name": "${{ steps.login-ecr.outputs.registry }}/${{    secrets.ECR_REPOSITORY }}:latest",
+              "Name": "${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest",
               "Update": "true"
             },
             "Ports": [
