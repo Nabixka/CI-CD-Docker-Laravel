@@ -33,12 +33,18 @@ jobs:
           docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:latest .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:latest
 
-      - name: Create Dockerrun.aws.json
+      - name: Create Dockerrun.aws.json (1 line, safe)
         run: |
           echo '{"AWSEBDockerrunVersion":1,"Image":{"Name":"'"${{ steps.login-ecr.outputs.registry }}/${{ secrets.ECR_REPOSITORY }}:latest"'","Update":"true"},"Ports":[{"ContainerPort":80}]}' > Dockerrun.aws.json
 
+      - name: Verify Dockerrun
+        run: cat Dockerrun.aws.json
+
       - name: Zip Dockerrun file
         run: zip -r latcicd.zip Dockerrun.aws.json
+
+      - name: Check ZIP contents
+        run: unzip -l latcicd.zip | head -n 10
 
       - name: Upload to S3
         run: |
